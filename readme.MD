@@ -792,26 +792,113 @@ root@shamil:~# sync; echo 1 > /proc/sys/vm/drop_caches
 <br>
 
 ## Security context 
-может быть настроен в спецификации на уровне pod и на уровне container  
-Можно переопределять user , mount volums 
 
+Может быть настроен в спецификации на уровне pod и на уровне container  
+```yaml
+spec:
+  containers:
+  – name: <имя_контейнера>
+    image: alpine
+    securityContext:
+      ...
+```
+Можно переопределять user, mount volums 
+|Ключи поля securityContext                                        |Значение ключа     |Эффект                                                                                            |
+|:-----------------------------------------------------------------|:------------------|:-------------------------------------------------------------------------------------------------|
+|spec.containers.<контейнер>.securityContext.runAsUser             |<ID пользователя>  |Контейнер будет запущен от пользователя с указанным                                               |
+|spec.containers.<контейнер>.securityContext.runAsNonRoot          |true               |От рута контейнер НЕ будет запущен                                                                |
+|spec.containers.<контейнер>.securityContext.privileged            |true               |Будет запущен в привилегированном режиме, например для работы с iptables или с устройствами /dev/*|
+|spec.containers.<контейнер>.securityContext.capabilities          |add.[<список CAP>] |Меняет привилегии более гранулярно чем Nonroot или privileged                                     | 
+|spec.containers.<контейнер>.securityContext.capabilities          |drop.[<список CAP>]|[capabilities linux-docker](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities)|
+|spec.containers.<контейнер>.securityContext.readOnlyRootFilesystem|true               |Запрещает контейнеру запись в файловую систему контейнера, можно писать только в смонтированные volumeMounts.readOnly: false|
+|spec.securityContext.fsGroup                                      |<group_id>         |GUID пользователя контейнеров пода будет <group_id>. Возможна совместная работа с файлами в томах |  
 
+Все такие контексты перед применением манифеста api-server проходят проверку на соответствие PodSecurityPolicy  
 
-ansible run in parallel: группы в инвентори
-сбор фактов: отключить
-вместо копирования скриптов в stdin интерпретатора python
-поменять ssh клиент у ansible
-не дожидаться выполнения task до конца и запускать след
+---
+<br>
 
-global_vars - приоритеты переменных ansible
+## Ansible  запускать таски in parallel
 
-конфиги maven 
+Через группы в инвентори
 
-kv2 - разграничение на чтение секретов и метаданных - при удалении секрета метаданные остаются
+---
+<br>
 
+## Методы ускорения Ansible
 
-как интегрировать доступ в волт из кубера , нужен сервис аккаунт для волта для валидации токена в кубе
+* Отключить сбор фактов 
+  ```yaml
+  gather_facts: False
+  ```
+* По умолчанию таски для групп выполняются параллельно на 5-и узлах, затем на следующих 5-и. Можно настроить в ansible.cfg:  
+  ```ini
+  [defaults]
+  inventory = ./hosts
+  forks = <количество>  
+  ```
+* вместо копирования скриптов отправлять их в stdin интерпретатору python  
+  ```ini
+  [ssh_connection]
+  pipelining = true
+  ```
 
+* тюнинг ssh в ansible.cfg  
+    **ControlMaster** – позволяет «утрамбовать» несколько одновременных SSH-сеансов с удаленным узлом в одно сетевое подключение. Это экономит время, поскольку сетевое подключение к узлу производится только при первом SSH-сеансе, а последующие просто работают через это подключение.  
+    **ControlPersist** – время, в течение которого неактивный SSH-сеанс остается открытым в фоновом режиме. Например, ControlPersist=60s означает, что неактивное соединение живет 60 секунд:
+    **host_key_checking** - проверка и верификация SSH ключей 
+  ```ini
+  [defaults]
+  host_key_checking = False
+  [ssh_connection]
+  ssh_args = -o ControlMaster=auto -o ControlPersist=60s
+  ```
+
+* Не дожидаться выполнения task до конца и запускать следующую
+  ```yaml
+  - hosts: servers
+    strategy: free
+    tasks:
+    ...
+  ```
+
+---
+<br>
+
+## Ansible variable prioriries
+  В [официальной документации](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable) указано 22 способа определять переменные. И указаны их приоритеты  
+  - hosts  
+  - group_vars  
+  - host_vars  
+  - facts  
+  - task vars  
+  - command line variables  
+
+---
+<br>
+
+## Ограничить потребление памяти jvm
+
+через параметры jvm:
+-Xms512m - начальный размер кучи
+-Xmx1024m - максимальный размер кучи  
+-Xss1m - размер стека потоков
+-Xmn256m - размер кучи для молодого поколения. Должно быть ниже, чем -Xmx
+
+---
+<br>
+
+## Vault kv2 - разграничение на чтение секретов и метаданных  
+kv2 поддерживает версионность  
+vault kv delete - при удалении секрета метаданные остаются  
+vault kv destroy - удаление ключа делает vault kv undelete невозможным  
+
+---
+<br>
+
+## как интегрировать доступ в волт из кубера, нужен сервис аккаунт для волта для валидации токена в кубе
+
+волту нужна будет сервисная учетка с правами на auth delegate стучаться на api k8s для валидации токена.   
 
 approle - метод аутентификации в волте
 
@@ -833,8 +920,17 @@ add_header -> переопределить в респонс
 
 как подсчитать какую долю процессовгого времени потребляет контейнер в кубе через rate
 
+## SOCKS протокол
+
+---
+<br>
+
+##  Как сделать чтобы длинный bash скрипт падал
 
 set -eo pipefail
+
+---
+<br>
 
 # Интервью 07.07.23
 
