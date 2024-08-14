@@ -146,9 +146,12 @@ Server Name Indication - расширение протокола TLS, анало
 Пример журналируемых файловых систем: ext3, ext4, xfs  
 Режимы журналирования:
 - режим обратной связи writeback - журналируются только метаданные
-- упорядоченный  ordered - журналируются метаданные синхронно относительно 
-  данных
-- режим данных journal - журналируются данные и метаданные
+- последовательный ordered - записываются изменения только мета-данных файловой 
+  системы, но записывает обновления данных файла на диск перед изменениями 
+  ассоциируемых мета-данных файловой системы. 
+- режим данных journal - запись всех изменений данных файловой системы и 
+  мета-данных. Наиболее медленный из всех трех режимов журналирования. 
+  Этот режим минимизирует шанс потери изменений файлов
 
 ---  
 
@@ -177,7 +180,14 @@ Consistency - Availability - Patition tolerance
 Примеры:  
 CA  - реляционные базы MySQL, Postgres  
 CP  - HBASE, mongodb, redis  
-AP  - Cassandra, Kafka  
+AP  - Cassandra, Kafka т.е. системы используемые для логов, событий, для данных 
+      которые начинают читать не мгновенно.
+
+PACELC - при условии наличия сетевого разделения **(P)**artitioning система 
+  может выбрать одно из двух: доступность **(A)**vailability или 
+  консистентность **(С)**onsistensy, иначе **(E)**lse, если сетевого разделения 
+  нет, система может выбрать одно из двух: время задержки **(L)**atency или 
+  консистентность **(С)**onsistensy.  
 
 ---  
 
@@ -417,6 +427,9 @@ Like readiness probes, liveness probes also run periodically.
 - at least two
 - all
 - quorum
+- read own writes
+- strong consistency
+- eventual consistency
 
 ---  
 
@@ -881,24 +894,70 @@ write(1, "hello\n", 6hello
 
 ## Как завершить процесс
 
-```bash
-$ kill -l
-|  #|signal     |  #|signal     |  #|signal     |  #|signal     |  #|signal     |
-|--:|:----------|--:|:----------|--:|:----------|--:|:----------|--:|:----------|
-| 1)|SIGHUP     | 2)|SIGINT     | 3)|SIGQUIT    | 4)|SIGILL     | 5)|SIGTRAP    |
-| 6)|SIGABRT    | 7)|SIGBUS     | 8)|SIGFPE     | 9)|SIGKILL    |10)|SIGUSR1    |
-|11)|SIGSEGV    |12)|SIGUSR2    |13)|SIGPIPE    |14)|SIGALRM    |15)|SIGTERM    |
-|16)|SIGSTKFLT  |17)|SIGCHLD    |18)|SIGCONT    |19)|SIGSTOP    |20)|SIGTSTP    |
-|21)|SIGTTIN    |22)|SIGTTOU    |23)|SIGURG     |24)|SIGXCPU    |25)|SIGXFSZ    |
-|26)|SIGVTALRM  |27)|SIGPROF    |28)|SIGWINCH   |29)|SIGIO      |30)|SIGPWR     |
-|31)|SIGSYS     |34)|SIGRTMIN   |35)|SIGRTMIN+1 |36)|SIGRTMIN+2 |37)|SIGRTMIN+3 |
-|38)|SIGRTMIN+4 |39)|SIGRTMIN+5 |40)|SIGRTMIN+6 |41)|SIGRTMIN+7 |42)|SIGRTMIN+8 |
-|43)|SIGRTMIN+9 |44)|SIGRTMIN+10|45)|SIGRTMIN+11|46)|SIGRTMIN+12|47)|SIGRTMIN+13|
-|48)|SIGRTMIN+14|49)|SIGRTMIN+15|50)|SIGRTMAX-14|51)|SIGRTMAX-13|52)|SIGRTMAX-12|
-|53)|SIGRTMAX-11|54)|SIGRTMAX-10|55)|SIGRTMAX-9 |56)|SIGRTMAX-8 |57)|SIGRTMAX-7 |
-|58)|SIGRTMAX-6 |59)|SIGRTMAX-5 |60)|SIGRTMAX-4 |61)|SIGRTMAX-3 |62)|SIGRTMAX-2 |
-|63)|SIGRTMAX-1 |64)|SIGRTMAX   |   |           |   |           |   |           |
-```  
+|    |  сигнал   | назначение  
+|---:|:----------|:------------
+|  1 |SIGHUP     |
+|  2 |SIGINT     |
+|  3 |SIGQUIT    |
+|  4 |SIGILL     |
+|  5 |SIGTRAP    |
+|  6 |SIGABRT    |
+|  7 |SIGBUS     |
+|  8 |SIGFPE     |
+|  9 |SIGKILL    |
+| 10 |SIGUSR1    |
+| 11 |SIGSEGV    |
+| 12 |SIGUSR2    |
+| 13 |SIGPIPE    |
+| 14 |SIGALRM    |
+| 15 |SIGTERM    |
+| 16 |SIGSTKFLT  |
+| 17 |SIGCHLD    |
+| 18 |SIGCONT    |
+| 19 |SIGSTOP    |
+| 20 |SIGTSTP    |
+| 21 |SIGTTIN    |
+| 22 |SIGTTOU    |
+| 23 |SIGURG     |
+| 24 |SIGXCPU    |
+| 25 |SIGXFSZ    |
+| 26 |SIGVTALRM  |
+| 27 |SIGPROF    |
+| 28 |SIGWINCH   |
+| 29 |SIGIO      |
+| 30 |SIGPWR     |
+| 31 |SIGSYS     |
+| 34 |SIGRTMIN   |
+| 35 |SIGRTMIN+1 |
+| 36 |SIGRTMIN+2 |
+| 37 |SIGRTMIN+3 |
+| 38 |SIGRTMIN+4 |
+| 39 |SIGRTMIN+5 |
+| 40 |SIGRTMIN+6 |
+| 41 |SIGRTMIN+7 |
+| 42 |SIGRTMIN+8 |
+| 43 |SIGRTMIN+9 |
+| 44 |SIGRTMIN+10|
+| 45 |SIGRTMIN+11|
+| 46 |SIGRTMIN+12|
+| 47 |SIGRTMIN+13|
+| 48 |SIGRTMIN+14|
+| 49 |SIGRTMIN+15|
+| 50 |SIGRTMAX-14|
+| 51 |SIGRTMAX-13|
+| 52 |SIGRTMAX-12|
+| 53 |SIGRTMAX-11|
+| 54 |SIGRTMAX-10|
+| 55 |SIGRTMAX-9 |
+| 56 |SIGRTMAX-8 |
+| 57 |SIGRTMAX-7 |
+| 58 |SIGRTMAX-6 |
+| 59 |SIGRTMAX-5 |
+| 60 |SIGRTMAX-4 |
+| 61 |SIGRTMAX-3 |
+| 62 |SIGRTMAX-2 |
+| 63 |SIGRTMAX-1 |
+| 64 |SIGRTMAX   |  
 
 `kill -9  <PID>`  -> ядру  
 `kill -15 <PID>`  -> процессу для gracefull shutdown. Есть таймаут
@@ -912,6 +971,17 @@ kill -18 <PID>
 ---  
 
 <br>  
+
+## Алгоритмы работы планировщика яддра
+
+Первым пришел - первым обслужен - по таймеру не прерывется
+Планирование с приоритетом самого короткого задания Shortest Job First
+Кратчайшее оставшееся время
+Приоритетное планирование
+Планирование с циклическим перебором - процессы прерываются через одинаковый 
+квант времени
+Справедливое планирование
+
 
 ## Интерпретация вводимых команд оболочки
 
